@@ -6,7 +6,7 @@
 
 A minimalistic web application for solving mathematical equations. Built with Flask and SymPy, designed to help students and knowledge workers solve equations quickly and intuitively.
 
-**Live Demo**: [Your PythonAnywhere URL]
+**Live Demo**: https://zombimann.pythonanywhere.com/
 
 ## ✨ Features
 
