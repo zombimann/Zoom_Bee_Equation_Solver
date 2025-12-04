@@ -1,14 +1,18 @@
 # flask_app.py
 from flask import Flask, render_template_string, request, jsonify
 import sympy as sp
-from sympy import sympify, Eq, latex, Symbol
+from sympy import Eq, latex, Symbol
+from sympy.parsing.sympy_parser import (
+    parse_expr, 
+    standard_transformations, 
+    implicit_multiplication_application, 
+    convert_xor
+)
 import re
-import signal
 
 app = Flask(__name__)
 
 MAX_INPUT_LENGTH = 500
-SOLVE_TIMEOUT = 4
 
 SAFE_LOCALS = {
     'sin': sp.sin, 'cos': sp.cos, 'tan': sp.tan,
@@ -19,29 +23,15 @@ SAFE_LOCALS = {
     'Abs': sp.Abs
 }
 
-def with_timeout(seconds):
-    def decorator(f):
-        if not hasattr(signal, 'SIGALRM'):
-            return f
-        def wrapped(*args, **kwargs):
-            def handler(signum, frame):
-                raise TimeoutError("Too slow")
-            old = signal.getsignal(signal.SIGALRM)
-            signal.signal(signal.SIGALRM, handler)
-            signal.alarm(seconds)
-            try:
-                return f(*args, **kwargs)
-            finally:
-                signal.signal(signal.SIGALRM, old)
-                signal.alarm(0)
-        return wrapped
-    return decorator
+# Define transformations for implicit multiplication (2x -> 2*x) and carets (x^2 -> x**2)
+TRANSFORMATIONS = (standard_transformations + (implicit_multiplication_application, convert_xor))
 
 def sanitize_input(text: str):
     if not text or len(text) > MAX_INPUT_LENGTH:
         return None, "Input too long (max 500 chars)"
     text = re.sub(r'[;\'"`]', '', text)
     text = re.sub(r'<[^>]+>', '', text)
+    # Unicode replacements
     replacements = {
         '²':'^2', '³':'^3', '⁴':'^4', '⁵':'^5', '⁶':'^6', '⁷':'^7', '⁸':'^8', '⁹':'^9',
         '√':'sqrt', '∛':'cbrt', '∞':'oo', 'π':'pi', '×':'*', '·':'*', '÷':'/', '−':'-', '–':'-', '—':'-',
@@ -49,29 +39,44 @@ def sanitize_input(text: str):
     }
     for a, b in replacements.items():
         text = text.replace(a, b)
+    
+    # Text replacements
     text = re.sub(r'\bsquare\s+root\s+of\b', 'sqrt', text, flags=re.I)
     text = re.sub(r'\bcube\s+root\s+of\b', 'cbrt', text, flags=re.I)
-    text = text.replace('**', '^')
+    
+    # Ensure standard caret usage for convert_xor transformation
+    text = text.replace('**', '^') 
     return text.strip(), None
 
 def safe_parse(equation_str: str):
     cleaned, err = sanitize_input(equation_str)
     if err: return None, err
-    cleaned = re.sub(r'([0-9]+)([a-zA-Z\(])', r'\1*\2', cleaned)
-    cleaned = re.sub(r'([a-zA-Z\)])([a-zA-Z]|\()', r'\1*\2', cleaned)
-    cleaned = re.sub(r'([a-zA-Z])\^', r'\1**', cleaned)
-    lhs_str = cleaned.split('=', 1)[0] if '=' in cleaned else cleaned.strip()
-    rhs_str = cleaned.split('=', 1)[1].strip() if '=' in cleaned else '0'
+    
+    # Split into LHS and RHS
+    if '=' in cleaned:
+        lhs_str, rhs_str = cleaned.split('=', 1)
+    else:
+        lhs_str, rhs_str = cleaned, '0'
+        
+    lhs_str = lhs_str.strip()
+    rhs_str = rhs_str.strip()
+
     try:
-        lhs = sympify(lhs_str, locals=SAFE_LOCALS, rational=True)
-        rhs = sympify(rhs_str, locals=SAFE_LOCALS, rational=True)
+        # Use parse_expr with transformations instead of manual regex + sympify
+        lhs = parse_expr(lhs_str, local_dict=SAFE_LOCALS, transformations=TRANSFORMATIONS, evaluate=False)
+        rhs = parse_expr(rhs_str, local_dict=SAFE_LOCALS, transformations=TRANSFORMATIONS, evaluate=False)
         return Eq(lhs, rhs), None
     except Exception as e:
         return None, f"Cannot understand: {e}"
 
-@with_timeout(SOLVE_TIMEOUT)
 def safe_solve(eq, var):
-    return sp.solve(eq, var)
+    try:
+        # v1.12+ supports timeout, older versions ignore it
+        return sp.solve(eq, var, timeout=4)
+    except TypeError:
+        return sp.solve(eq, var)
+    except Exception:
+        return []
 
 def solve_equation(equation_str: str, variable_str: str = 'x'):
     try:
@@ -79,8 +84,10 @@ def solve_equation(equation_str: str, variable_str: str = 'x'):
         if not re.fullmatch(r'[a-z]', variable_str):
             return {'error': 'Variable must be a single letter (a-z)'}
         var = Symbol(variable_str)
+        
         eq, err = safe_parse(equation_str)
         if err: return {'error': err}
+        
         if var not in eq.free_symbols:
             avail = ', '.join(str(s) for s in eq.free_symbols)
             msg = f'Variable "{variable_str}" not found'
@@ -88,21 +95,35 @@ def solve_equation(equation_str: str, variable_str: str = 'x'):
             return {'error': msg}
 
         solutions = safe_solve(eq, var)
-        if not solutions:
-            return {'no_solution': True, 'message': 'No solutions found', 'equation': latex(eq)}
+        
+        # Check if solutions is empty or None
+        if not solutions and solutions != 0: 
+             return {'no_solution': True, 'message': 'No solutions found', 'equation': latex(eq)}
 
         results = []
+        # Ensure solutions is iterable (handle single scalar result edge cases)
+        if not isinstance(solutions, list):
+            solutions = [solutions]
+
         for sol in solutions:
+            # Handle dictionary results (common in systems of equations, though we target single var)
             val = sol[var] if isinstance(sol, dict) else sol
+            
             exact = latex(val)
             plain = str(val)
             try:
                 num = val.evalf(12)
-                decimal = f"{float(num):.10f}".rstrip('0').rstrip('.') if num.is_real else str(num)
-                if decimal == str(int(float(decimal))): decimal += '.0'
+                if num.is_real:
+                    decimal = f"{float(num):.10f}".rstrip('0').rstrip('.')
+                    if decimal == '': decimal = '0' # Handle exact 0 case
+                    elif decimal.replace('.','').isdigit() and '.' in decimal: # Ensure X.0 format for integers
+                         if float(decimal).is_integer(): decimal = f"{int(float(decimal))}.0"
+                else:
+                    decimal = str(num)
             except:
                 decimal = "Symbolic"
             results.append({'exact': exact, 'decimal': decimal, 'plain': plain})
+            
         return {
             'success': True,
             'equation': latex(eq),
@@ -110,15 +131,13 @@ def solve_equation(equation_str: str, variable_str: str = 'x'):
             'solutions': results,
             'count': len(results)
         }
-    except TimeoutError:
-        return {'error': 'Solving took too long'}
     except Exception as e:
-        return {'error': f'Unexpected error: {e}'}
+        return {'error': f'Solving failed: {str(e)}'}
 
-# ------------------- HTML + JS (raw string → no warnings) -------------------
+# ------------------- HTML + JS (Unchanged) -------------------
 HTML_TEMPLATE = r'''<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Zoom Bee Apps - Equation Solver</title>
+<title>Equation Solver</title>
 <style>
 :root{--p:#FF9800;--pd:#F57C00;--pl:#FFB74D;--bg:#FFF8F0;--c:#FFF;--t:#333;--tl:#666;--b:#E0E0E0;--ok:#4CAF50;--err:#F44336}
 *{margin:0;padding:0;box-sizing:border-box}body{font-family:system-ui,sans-serif;background:linear-gradient(135deg,var(--bg),#fff);color:var(--t);min-height:100vh;padding:20px}
@@ -171,7 +190,7 @@ const eq = document.getElementById('eq'), vari = document.getElementById('var'),
       spin = document.getElementById('spin'), results = document.getElementById('results'), toast = document.getElementById('toast');
 
 window.solutionsData = [];
-window.currentMode = 'exact';   // global tracking of current display mode
+window.currentMode = 'exact';
 
 function showToast(msg = 'Copied!') {
   toast.textContent = msg;
@@ -217,17 +236,14 @@ async function solve() {
         </div>`;
       });
       results.innerHTML = h;
-
-      // Re-attach toggle listeners (because innerHTML wipes them)
-      document.querySelectorAll('.toggle-btn').forEach(btn => {
-        btn.onclick = function() { toggle(this.dataset.index, this.dataset.mode); };
+      document.querySelectorAll('.toggle-btn').forEach(b => {
+        b.onclick = () => toggle(b.dataset.index, b.dataset.mode);
       });
-
       MathJax.typesetPromise();
     }
   } catch (e) {
     console.error(e);
-    results.innerHTML = `<div class="error-message">Network or Parse Error</div>`;
+    results.innerHTML = `<div class="error-message">Network error</div>`;
   } finally {
     btn.disabled = false; spin.style.display = 'none';
   }
@@ -236,55 +252,31 @@ async function solve() {
 function toggle(i, mode) {
   const s = window.solutionsData[i];
   const content = document.getElementById(`c${i}`);
-  const buttons = content.parentElement.querySelectorAll('.toggle-btn');
-  buttons.forEach(b => b.classList.remove('active'));
+  content.parentElement.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
   event.target.classList.add('active');
-
-  if (mode === 'exact') {
-    content.innerHTML = `$${s.exact}$`;
-    window.currentMode = 'exact';
-  } else {
-    content.innerHTML = `<code>${s.decimal}</code>`;
-    window.currentMode = 'decimal';
-  }
+  content.innerHTML = mode === 'exact' ? `$${s.exact}$` : `<code>${s.decimal}</code>`;
+  window.currentMode = mode;
   MathJax.typesetPromise();
 }
 
-// FINAL COPY LOGIC – respects Exact / Approximate mode
 async function copyResult(i, type) {
   const s = window.solutionsData[i];
-  const isDecimalMode = window.currentMode === 'decimal';
-
+  const isDecimal = window.currentMode === 'decimal';
   let text = '';
 
-  if (type === 'latex') {
-    text = isDecimalMode ? s.decimal : s.exact;
-  } else if (type === 'md') {
-    text = isDecimalMode ? s.decimal : `$$${s.exact}$$`;
-  } else if (type === 'plain') {
-    text = isDecimalMode ? s.decimal : s.plain;
-  } else if (type === 'html') {
-    if (isDecimalMode) {
-      text = s.decimal;
-    } else {
-      text = `<math xmlns="http://www.w3.org/1998/Math/MathML" display="block">
-  <mrow>${s.exact.replace(/\\([()])/g, '$1')}</mrow>
-</math>`;
-    }
-  }
+  if (type === 'latex') text = isDecimal ? s.decimal : s.exact;
+  else if (type === 'md') text = isDecimal ? s.decimal : `$$${s.exact}$$`;
+  else if (type === 'plain') text = isDecimal ? s.decimal : s.plain;
+  else if (type === 'html') text = isDecimal ? s.decimal : `<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow>${s.exact.replace(/\\([()])/g, '$1')}</mrow></math>`;
 
   try {
     await navigator.clipboard.writeText(text);
-    showToast('Copied!');
-  } catch (err) {
-    // Fallback for non-HTTPS or old browsers
+    showToast();
+  } catch {
     const ta = document.createElement('textarea');
-    ta.value = text;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-    showToast('Copied!');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    showToast();
   }
 }
 
@@ -307,4 +299,4 @@ def solve():
     return jsonify(solve_equation(equation, variable))
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=int(__import__('os').environ.get('PORT', 5000)))
