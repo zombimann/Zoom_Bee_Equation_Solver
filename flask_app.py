@@ -1,12 +1,17 @@
-from flask import Flask, render_template_string, request, escape
-from sympy import symbols, solve, sympify, latex
-from sympy.parsing.sympy_parser import parse_expr, standard_transformations, implicit_multiplication_application
+from flask import Flask, render_template_string, request
+from sympy import symbols, solve, latex
+from sympy.parsing.sympy_parser import (
+    parse_expr,
+    standard_transformations,
+    implicit_multiplication_application
+)
 import re
 
 app = Flask(__name__)
 
 MAX_EQUATION_LENGTH = 500
 MAX_VARIABLE_LENGTH = 10
+
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -56,15 +61,9 @@ HTML_TEMPLATE = """
             letter-spacing: 1px;
             margin-bottom: 8px;
         }
-        h1 {
-            color: #333;
-            margin-bottom: 8px;
-            font-size: 28px;
-        }
-        .subtitle {
-            color: #666;
-            font-size: 15px;
-        }
+        h1 { color: #333; font-size: 28px; margin-bottom: 8px; }
+        .subtitle { color: #666; font-size: 15px; }
+
         button {
             width: 100%;
             padding: 12px;
@@ -85,6 +84,21 @@ HTML_TEMPLATE = """
         }
         .toggle-btn:hover { background: #449d48; }
 
+        .copy-btn {
+            margin-top: 10px;
+            background: #1976d2;
+            font-size: 14px;
+            padding: 10px;
+        }
+        .copy-btn:hover { background: #0d47a1; }
+
+        .copy-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+            margin-top: 15px;
+        }
+
         .result {
             margin-top: 30px;
             padding: 20px;
@@ -92,6 +106,8 @@ HTML_TEMPLATE = """
             border-left: 4px solid #4CAF50;
             border-radius: 4px;
         }
+
+        .result-label { margin-bottom: 10px; color: #444; }
 
         .result-section { display: none; }
         .result-section.active { display: block; }
@@ -102,7 +118,6 @@ HTML_TEMPLATE = """
             border: 2px solid #e0e0e0;
             border-radius: 4px;
             font-size: 16px;
-            transition: border-color 0.3s;
         }
         input[type="text"]:focus { border-color: #FF9800; }
 
@@ -122,12 +137,14 @@ HTML_TEMPLATE = """
         @media (max-width: 600px) {
             .form-row { grid-template-columns: 1fr; }
             .variable-input { width: 100%; }
+            .copy-buttons { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 
 <body>
     <div class="container">
+
         <div class="header">
             <div class="brand">🐝 Zoom Bee Apps</div>
             <h1>Equation Solver</h1>
@@ -135,6 +152,7 @@ HTML_TEMPLATE = """
         </div>
 
         <form method="POST">
+
             <div class="form-group">
                 <label for="equation">Enter your equation:</label>
                 <input type="text" id="equation" name="equation"
@@ -161,24 +179,36 @@ HTML_TEMPLATE = """
 
         {% if result %}
         <div class="result">
-            <div class="result-label">Solving for <strong>{{ variable }}</strong>:</div>
+            <div class="result-label">
+                Solving for <strong>{{ variable }}</strong>:
+            </div>
 
+            <!-- Toggle Button -->
             <button class="toggle-btn" type="button" onclick="toggleOutput()">
                 Toggle Exact / Numeric
             </button>
 
-            <div id="exact" class="result-section active" style="font-size: 18px; margin-top: 15px;">
+            <!-- Exact result -->
+            <div id="exact" class="result-section active" style="font-size:18px; margin-top:15px;">
                 $${{ result }}$$
             </div>
 
-            <div id="numeric" class="result-section" style="font-size: 18px; margin-top: 15px;">
+            <!-- Numeric result -->
+            <div id="numeric" class="result-section" style="font-size:18px; margin-top:15px;">
                 $${{ numeric }}$$
+            </div>
+
+            <!-- Copy Buttons -->
+            <div class="copy-buttons">
+                <button class="copy-btn" type="button" onclick="copyText(`{{ copy_latex }}`)">Copy LaTeX</button>
+                <button class="copy-btn" type="button" onclick="copyText(`{{ copy_markdown }}`)">Copy Markdown</button>
+                <button class="copy-btn" type="button" onclick="copyText(`{{ copy_plain }}`)">Copy Text</button>
             </div>
         </div>
         {% endif %}
 
         {% if error %}
-        <div class="error" style="margin-top: 30px; padding: 20px; background:#ffebee; border-left:4px solid #f44336;">
+        <div class="error" style="margin-top: 30px; padding:20px; background:#ffebee; border-left:4px solid #f44336;">
             <strong>Error:</strong> {{ error }}
         </div>
         {% endif %}
@@ -186,19 +216,26 @@ HTML_TEMPLATE = """
 
 <script>
 function toggleOutput() {
-    const exact = document.getElementById("exact");
-    const numeric = document.getElementById("numeric");
+    let exact = document.getElementById("exact");
+    let numeric = document.getElementById("numeric");
 
     exact.classList.toggle("active");
     numeric.classList.toggle("active");
 
-    if (window.MathJax) { MathJax.typesetPromise(); }
+    if (window.MathJax) MathJax.typesetPromise();
+}
+
+function copyText(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        alert("Copied!");
+    });
 }
 </script>
 
 </body>
 </html>
 """
+
 
 def convert_natural_to_sympy(eq):
     eq = eq.replace("√", "sqrt")
@@ -207,16 +244,19 @@ def convert_natural_to_sympy(eq):
     eq = eq.replace("ln(", "log(")
     return eq
 
-def is_safe_input(text):
-    forbidden = ["__", "import", "eval", "exec", "compile", "open",
-                 "file", "input", "globals", "locals", "vars", "dir"]
-    t = text.lower()
-    return not any(x in t for x in forbidden)
+
+def is_safe_input(t):
+    bad = ["__", "import", "eval", "exec", "compile", "open",
+           "file", "input", "globals", "locals", "vars", "dir"]
+    l = t.lower()
+    return not any(b in l for b in bad)
+
 
 def is_valid_variable(v):
     return bool(re.match(r"^[a-zA-Z]+$", v))
 
-@app.route("/", methods=["GET","POST"])
+
+@app.route("/", methods=["GET", "POST"])
 def index():
     result = None
     numeric_result = None
@@ -224,25 +264,29 @@ def index():
     equation = None
     variable = "x"
 
+    copy_latex = ""
+    copy_markdown = ""
+    copy_plain = ""
+
     if request.method == "POST":
-        equation = request.form.get("equation","").strip()
-        variable = request.form.get("variable","x").strip()
+        equation = request.form.get("equation", "").strip()
+        variable = request.form.get("variable", "x").strip()
 
         if len(equation) > MAX_EQUATION_LENGTH:
-            error = "Equation is too long. Keep under 500 characters."
+            error = "Equation is too long."
             return render_template_string(HTML_TEMPLATE, error=error,
                                           equation=None, variable=variable,
                                           max_length=MAX_EQUATION_LENGTH,
                                           max_var_length=MAX_VARIABLE_LENGTH)
 
         if len(variable) > MAX_VARIABLE_LENGTH or not is_valid_variable(variable):
-            error = "Variable must be letters only and under 10 characters."
+            error = "Invalid variable name."
             return render_template_string(HTML_TEMPLATE, error=error,
                                           equation=equation, variable="x",
                                           max_length=MAX_EQUATION_LENGTH,
                                           max_var_length=MAX_VARIABLE_LENGTH)
 
-        if not is_safe_input(equation) or not is_safe_input(variable):
+        if not is_safe_input(equation):
             error = "Invalid input detected."
             return render_template_string(HTML_TEMPLATE, error=error,
                                           equation=None, variable="x",
@@ -250,42 +294,68 @@ def index():
                                           max_var_length=MAX_VARIABLE_LENGTH)
 
         try:
-            converted = convert_natural_to_sympy(equation)
-            transformations = (standard_transformations +
-                               (implicit_multiplication_application,))
+            conv = convert_natural_to_sympy(equation)
+            transforms = (standard_transformations +
+                          (implicit_multiplication_application,))
 
-            if "=" in converted:
-                left, right = converted.split("=")
-                expr = parse_expr(left, transformations=transformations) \
-                       - parse_expr(right, transformations=transformations)
+            if "=" in conv:
+                L, R = conv.split("=")
+                expr = parse_expr(L, transformations=transforms) - \
+                       parse_expr(R, transformations=transforms)
             else:
-                expr = parse_expr(converted, transformations=transformations)
+                expr = parse_expr(conv, transformations=transforms)
 
             sym = symbols(variable)
-            solutions = solve(expr, sym)
+            sols = solve(expr, sym)
 
-            if not solutions:
-                result = "\\text{No solution found}"
+            if not sols:
+                result = "\\text{No solution}"
                 numeric_result = "\\text{No numeric form}"
+
+                copy_latex = "No solution"
+                copy_markdown = "No solution"
+                copy_plain = "No solution"
             else:
-                if len(solutions) == 1:
-                    result = f"{variable} = {latex(solutions[0])}"
-                    numeric_result = f"{variable} ≈ {latex(solutions[0].evalf())}"
+                if len(sols) == 1:
+                    exact = sols[0]
+                    num = exact.evalf()
+
+                    result = f"{variable} = {latex(exact)}"
+                    numeric_result = f"{variable} ≈ {latex(num)}"
+
+                    # Copy formats
+                    copy_latex = result
+                    copy_markdown = f"${result}$"
+                    copy_plain = f"{variable} = {str(exact)}"
+
                 else:
-                    result = f"{variable} = " + ",\\;".join(latex(s) for s in solutions)
-                    numeric_result = f"{variable} ≈ " + ",\\;".join(latex(s.evalf()) for s in solutions)
+                    exact_list = ", ".join(latex(s) for s in sols)
+                    numeric_list = ", ".join(latex(s.evalf()) for s in sols)
 
-        except:
-            error = "Unable to solve equation. Please check syntax."
+                    result = f"{variable} = " + exact_list
+                    numeric_result = f"{variable} ≈ " + numeric_list
 
-    return render_template_string(HTML_TEMPLATE,
-                                  result=result,
-                                  numeric=numeric_result,
-                                  error=error,
-                                  equation=equation,
-                                  variable=variable,
-                                  max_length=MAX_EQUATION_LENGTH,
-                                  max_var_length=MAX_VARIABLE_LENGTH)
+                    copy_latex = result
+                    copy_markdown = f"${result}$"
+                    copy_plain = f"{variable} = {', '.join(str(s) for s in sols)}"
+
+        except Exception:
+            error = "Unable to solve equation."
+
+    return render_template_string(
+        HTML_TEMPLATE,
+        result=result,
+        numeric=numeric_result,
+        copy_latex=copy_latex,
+        copy_markdown=copy_markdown,
+        copy_plain=copy_plain,
+        error=error,
+        equation=equation,
+        variable=variable,
+        max_length=MAX_EQUATION_LENGTH,
+        max_var_length=MAX_VARIABLE_LENGTH
+    )
+
 
 if __name__ == "__main__":
     app.run(debug=True)
