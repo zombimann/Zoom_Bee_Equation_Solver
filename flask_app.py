@@ -5,6 +5,7 @@ from sympy.parsing.sympy_parser import (
     standard_transformations,
     implicit_multiplication_application
 )
+from html import unescape
 import re
 
 app = Flask(__name__)
@@ -19,17 +20,15 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Free online equation solver for students and professionals. Solve algebraic, quadratic, trigonometric equations instantly. Perfect for homework, learning, and quick calculations.">
-    <meta name="keywords" content="equation solver, math solver, algebra calculator, quadratic equation solver, solve equations online, free math calculator, homework helper">
+    <meta name="description" content="Free online equation solver for students and professionals. Solve algebraic, quadratic, trigonometric equations instantly.">
+    <meta name="keywords" content="equation solver, math, algebra, calculator">
     <meta name="author" content="Zoom Bee Apps">
-    <meta property="og:title" content="Equation Solver - Free Online Math Calculator">
-    <meta property="og:description" content="Solve any equation instantly with our free online calculator. Perfect for students and knowledge workers.">
-    <meta property="og:type" content="website">
-    <title>Free Equation Solver - Solve Math Equations Online | Zoom Bee Apps</title>
-    <link rel="canonical" href="https://yourusername.pythonanywhere.com/">
+    <title>Equation Solver | Zoom Bee Apps</title>
 
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
-    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script id="MathJax-script" async 
+      src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+    </script>
 
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -37,8 +36,8 @@ HTML_TEMPLATE = """
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: #f5f5f5;
             padding: 20px;
-            line-height: 1.6;
         }
+
         .container {
             max-width: 700px;
             margin: 40px auto;
@@ -47,177 +46,152 @@ HTML_TEMPLATE = """
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 2px solid #f0f0f0;
-        }
-        .brand {
-            color: #FF9800;
-            font-size: 14px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 8px;
-        }
-        h1 { color: #333; font-size: 28px; margin-bottom: 8px; }
-        .subtitle { color: #666; font-size: 15px; }
+
+        h1 { margin-bottom: 10px; color: #333; }
 
         button {
             width: 100%;
             padding: 12px;
             background: #FF9800;
             color: white;
-            border: none;
             border-radius: 4px;
-            font-size: 16px;
-            font-weight: 500;
+            border: none;
             cursor: pointer;
-            transition: background 0.3s;
+            font-size: 16px;
         }
         button:hover { background: #F57C00; }
 
-        .toggle-btn {
-            margin-top: 10px;
-            background: #4CAF50;
-        }
-        .toggle-btn:hover { background: #449d48; }
+        .toggle-btn { margin-top: 10px; background:#4CAF50; }
+        .toggle-btn:hover { background:#449d48; }
 
-        .copy-btn {
-            margin-top: 10px;
-            background: #1976d2;
-            font-size: 14px;
-            padding: 10px;
-        }
-        .copy-btn:hover { background: #0d47a1; }
+        .copy-btn { background:#1976d2; padding:10px; font-size:14px; }
+        .copy-btn:hover { background:#0d47a1; }
 
         .copy-buttons {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 8px;
-            margin-top: 15px;
+            display:grid;
+            grid-template-columns:repeat(4, 1fr);
+            gap:10px;
+            margin-top:15px;
         }
 
         .result {
-            margin-top: 30px;
-            padding: 20px;
-            background: #f9f9f9;
-            border-left: 4px solid #4CAF50;
-            border-radius: 4px;
+            margin-top:30px;
+            padding:20px;
+            background:#f9f9f9;
+            border-left:4px solid #4CAF50;
         }
 
-        .result-label { margin-bottom: 10px; color: #444; }
-
-        .result-section { display: none; }
-        .result-section.active { display: block; }
+        .result-section { display:none; }
+        .result-section.active { display:block; }
 
         input[type="text"] {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 4px;
-            font-size: 16px;
+            width:100%;
+            padding:12px;
+            border:2px solid #e0e0e0;
+            border-radius:4px;
+            font-size:16px;
         }
-        input[type="text"]:focus { border-color: #FF9800; }
+        input[type="text"]:focus { border-color:#FF9800; }
 
-        .variable-input {
-            width: 80px;
+        /* ------------ Toast Notification ------------- */
+        #toast {
+            visibility: hidden;
+            min-width: 160px;
+            background: #333;
+            color: #fff;
             text-align: center;
-            font-weight: 500;
+            border-radius: 6px;
+            padding: 12px;
+            position: fixed;
+            left: 50%;
+            bottom: 40px;
+            transform: translateX(-50%);
+            z-index: 9999;
+            font-size: 15px;
+            opacity: 0;
+            transition: opacity .3s ease;
         }
 
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr auto;
-            gap: 10px;
-            align-items: end;
+        #toast.show {
+            visibility: visible;
+            opacity: 1;
         }
 
-        @media (max-width: 600px) {
-            .form-row { grid-template-columns: 1fr; }
-            .variable-input { width: 100%; }
-            .copy-buttons { grid-template-columns: 1fr; }
+        @media (max-width:600px) {
+            .copy-buttons { grid-template-columns:1fr; }
         }
     </style>
 </head>
 
 <body>
-    <div class="container">
 
-        <div class="header">
-            <div class="brand">🐝 Zoom Bee Apps</div>
-            <h1>Equation Solver</h1>
-            <p class="subtitle">A learning tool for students and knowledge workers</p>
-        </div>
+<div id="toast">Copied!</div>
 
-        <form method="POST">
+<div class="container">
 
-            <div class="form-group">
-                <label for="equation">Enter your equation:</label>
-                <input type="text" id="equation" name="equation"
-                       placeholder="e.g., 2x + 5 = 11"
-                       value="{{ equation or '' }}"
-                       maxlength="{{ max_length }}" required>
-            </div>
-
-            <div class="form-group">
-                <div class="form-row">
-                    <div>
-                        <label for="variable">Solve for variable:</label>
-                        <input type="text" id="variable" name="variable"
-                               class="variable-input" placeholder="x"
-                               value="{{ variable or 'x' }}"
-                               maxlength="{{ max_var_length }}"
-                               pattern="[a-zA-Z]+" required>
-                    </div>
-                </div>
-            </div>
-
-            <button type="submit">Solve Equation</button>
-        </form>
-
-        {% if result %}
-        <div class="result">
-            <div class="result-label">
-                Solving for <strong>{{ variable }}</strong>:
-            </div>
-
-            <!-- Toggle Button -->
-            <button class="toggle-btn" type="button" onclick="toggleOutput()">
-                Toggle Exact / Numeric
-            </button>
-
-            <!-- Exact result -->
-            <div id="exact" class="result-section active" style="font-size:18px; margin-top:15px;">
-                $${{ result }}$$
-            </div>
-
-            <!-- Numeric result -->
-            <div id="numeric" class="result-section" style="font-size:18px; margin-top:15px;">
-                $${{ numeric }}$$
-            </div>
-
-            <!-- Copy Buttons -->
-            <div class="copy-buttons">
-                <button class="copy-btn" type="button" onclick="copyText(`{{ copy_latex }}`)">Copy LaTeX</button>
-                <button class="copy-btn" type="button" onclick="copyText(`{{ copy_markdown }}`)">Copy Markdown</button>
-                <button class="copy-btn" type="button" onclick="copyText(`{{ copy_plain }}`)">Copy Text</button>
-            </div>
-        </div>
-        {% endif %}
-
-        {% if error %}
-        <div class="error" style="margin-top: 30px; padding:20px; background:#ffebee; border-left:4px solid #f44336;">
-            <strong>Error:</strong> {{ error }}
-        </div>
-        {% endif %}
+    <div class="header">
+        <div class="brand">🐝 Zoom Bee Apps</div>
+        <h1>Equation Solver</h1>
+        <p class="subtitle">A learning tool for students and knowledge workers</p>
     </div>
+
+    <form method="POST">
+        <div>
+            <label>Enter your equation:</label>
+            <input type="text" name="equation"
+                   placeholder="e.g., 2x + 5 = 11"
+                   value="{{ equation or '' }}"
+                   maxlength="{{ max_length }}" required>
+        </div>
+
+        <div style="margin-top:20px;">
+            <label>Solve for variable:</label>
+            <input type="text" name="variable"
+                   class="variable-input"
+                   value="{{ variable or 'x' }}"
+                   maxlength="{{ max_var_length }}"
+                   pattern="[a-zA-Z]+" required>
+        </div>
+
+        <button style="margin-top:20px;" type="submit">Solve Equation</button>
+    </form>
+
+    {% if result %}
+    <div class="result">
+        <div class="result-label">Solving for <strong>{{ variable }}</strong>:</div>
+
+        <button class="toggle-btn" type="button" onclick="toggleOutput()">
+            Toggle Exact / Numeric
+        </button>
+
+        <div id="exact" class="result-section active" style="margin-top:15px; font-size:18px;">
+            $${{ result }}$$
+        </div>
+
+        <div id="numeric" class="result-section" style="margin-top:15px; font-size:18px;">
+            $${{ numeric }}$$
+        </div>
+
+        <div class="copy-buttons">
+            <button class="copy-btn" data-copy="{{ copy_latex|e }}" onclick="copyFrom(this)">Copy LaTeX</button>
+            <button class="copy-btn" data-copy="{{ copy_markdown|e }}" onclick="copyFrom(this)">Copy Markdown</button>
+            <button class="copy-btn" data-copy="{{ copy_plain|e }}" onclick="copyFrom(this)">Copy Text</button>
+            <button class="copy-btn" data-copy="{{ copy_html|e }}" onclick="copyFrom(this)">Copy HTML</button>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if error %}
+    <div style="margin-top:30px; padding:20px; background:#ffebee; border-left:4px solid #f44336;">
+        <strong>Error:</strong> {{ error }}
+    </div>
+    {% endif %}
+</div>
 
 <script>
 function toggleOutput() {
-    let exact = document.getElementById("exact");
-    let numeric = document.getElementById("numeric");
+    const exact = document.getElementById("exact");
+    const numeric = document.getElementById("numeric");
 
     exact.classList.toggle("active");
     numeric.classList.toggle("active");
@@ -225,10 +199,26 @@ function toggleOutput() {
     if (window.MathJax) MathJax.typesetPromise();
 }
 
-function copyText(text) {
-    navigator.clipboard.writeText(text).then(() => {
-        alert("Copied!");
-    });
+function copyFrom(btn) {
+    const text = btn.dataset.copy || "";
+
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(showToast);
+    } else {
+        const t = document.createElement("textarea");
+        t.value = text;
+        document.body.appendChild(t);
+        t.select();
+        document.execCommand("copy");
+        document.body.removeChild(t);
+        showToast();
+    }
+}
+
+function showToast() {
+    const toast = document.getElementById("toast");
+    toast.classList.add("show");
+    setTimeout(() => toast.classList.remove("show"), 1800);
 }
 </script>
 
@@ -237,26 +227,68 @@ function copyText(text) {
 """
 
 
+
+# ---------- Input Normalization Utilities ----------
+
+_SUPER = {
+    '⁰':'**0','¹':'**1','²':'**2','³':'**3','⁴':'**4','⁵':'**5',
+    '⁶':'**6','⁷':'**7','⁸':'**8','⁹':'**9'
+}
+
+def replace_superscripts(s):
+    for k,v in _SUPER.items():
+        s = s.replace(k,v)
+    return s
+
+
 def convert_natural_to_sympy(eq):
+    if not eq: return eq
+
+    eq = unescape(eq)
+
+    # Remove code fences, HTML tags, markdown, etc.
+    eq = re.sub(r'<[^>]+>', ' ', eq)
+    eq = re.sub(r'`+', ' ', eq)
+    eq = re.sub(r'\$\$|\$|\\[|\\]', ' ', eq)
+
+    # Remove \left, \right
+    eq = eq.replace("\\left","").replace("\\right","")
+
+    # LaTeX conversions
+    eq = re.sub(r'\\sqrt\s*{([^}]*)}', r'sqrt(\1)', eq)
+
+    def frac(m):
+        return f"(({m.group(1)})/({m.group(2)}))"
+    eq = re.sub(r'\\frac\s*{([^}]*)}{([^}]*)}', frac, eq)
+
+    eq = eq.replace("\\cdot","*").replace("\\times","*").replace("\\div","/")
+    eq = eq.replace("\\ln","log").replace("\\log","log").replace("\\exp","exp")
+
+    # Unicode normalization
     eq = eq.replace("√", "sqrt")
-    eq = eq.replace("×", "*").replace("÷", "/")
-    eq = eq.replace("^", "**").replace("²", "**2").replace("³", "**3")
-    eq = eq.replace("ln(", "log(")
+    eq = replace_superscripts(eq)
+    eq = eq.replace("·","*").replace("×","*").replace("÷","/")
+    eq = eq.replace("π","pi")
+
+    # Spaces
+    eq = re.sub(r'\s+',' ', eq).strip()
+
     return eq
 
 
+# ---------- Safety Utilities ----------
 def is_safe_input(t):
-    bad = ["__", "import", "eval", "exec", "compile", "open",
-           "file", "input", "globals", "locals", "vars", "dir"]
-    l = t.lower()
-    return not any(b in l for b in bad)
-
+    bad = ["__", "import", "eval", "exec", "compile",
+           "open", "input", "globals", "locals", "vars"]
+    t = t.lower()
+    return not any(b in t for b in bad)
 
 def is_valid_variable(v):
     return bool(re.match(r"^[a-zA-Z]+$", v))
 
 
-@app.route("/", methods=["GET", "POST"])
+# ---------- Main Route ----------
+@app.route("/", methods=["GET","POST"])
 def index():
     result = None
     numeric_result = None
@@ -267,80 +299,64 @@ def index():
     copy_latex = ""
     copy_markdown = ""
     copy_plain = ""
+    copy_html = ""
 
     if request.method == "POST":
-        equation = request.form.get("equation", "").strip()
-        variable = request.form.get("variable", "x").strip()
+        equation = (request.form.get("equation") or "").strip()
+        variable = (request.form.get("variable") or "x").strip()
 
         if len(equation) > MAX_EQUATION_LENGTH:
             error = "Equation is too long."
-            return render_template_string(HTML_TEMPLATE, error=error,
-                                          equation=None, variable=variable,
-                                          max_length=MAX_EQUATION_LENGTH,
-                                          max_var_length=MAX_VARIABLE_LENGTH)
-
-        if len(variable) > MAX_VARIABLE_LENGTH or not is_valid_variable(variable):
+        elif len(variable) > MAX_VARIABLE_LENGTH or not is_valid_variable(variable):
             error = "Invalid variable name."
-            return render_template_string(HTML_TEMPLATE, error=error,
-                                          equation=equation, variable="x",
-                                          max_length=MAX_EQUATION_LENGTH,
-                                          max_var_length=MAX_VARIABLE_LENGTH)
+        elif not is_safe_input(equation):
+            error = "Invalid input."
+        else:
+            try:
+                conv = convert_natural_to_sympy(equation)
+                transforms = (standard_transformations +
+                              (implicit_multiplication_application,))
 
-        if not is_safe_input(equation):
-            error = "Invalid input detected."
-            return render_template_string(HTML_TEMPLATE, error=error,
-                                          equation=None, variable="x",
-                                          max_length=MAX_EQUATION_LENGTH,
-                                          max_var_length=MAX_VARIABLE_LENGTH)
-
-        try:
-            conv = convert_natural_to_sympy(equation)
-            transforms = (standard_transformations +
-                          (implicit_multiplication_application,))
-
-            if "=" in conv:
-                L, R = conv.split("=")
-                expr = parse_expr(L, transformations=transforms) - \
-                       parse_expr(R, transformations=transforms)
-            else:
-                expr = parse_expr(conv, transformations=transforms)
-
-            sym = symbols(variable)
-            sols = solve(expr, sym)
-
-            if not sols:
-                result = "\\text{No solution}"
-                numeric_result = "\\text{No numeric form}"
-
-                copy_latex = "No solution"
-                copy_markdown = "No solution"
-                copy_plain = "No solution"
-            else:
-                if len(sols) == 1:
-                    exact = sols[0]
-                    num = exact.evalf()
-
-                    result = f"{variable} = {latex(exact)}"
-                    numeric_result = f"{variable} ≈ {latex(num)}"
-
-                    # Copy formats
-                    copy_latex = result
-                    copy_markdown = f"${result}$"
-                    copy_plain = f"{variable} = {str(exact)}"
-
+                if "=" in conv:
+                    L, R = conv.split("=",1)
+                    expr = parse_expr(L, transformations=transforms) - \
+                           parse_expr(R, transformations=transforms)
                 else:
-                    exact_list = ", ".join(latex(s) for s in sols)
-                    numeric_list = ", ".join(latex(s.evalf()) for s in sols)
+                    expr = parse_expr(conv, transformations=transforms)
 
-                    result = f"{variable} = " + exact_list
-                    numeric_result = f"{variable} ≈ " + numeric_list
+                sym = symbols(variable)
+                sols = solve(expr, sym)
 
-                    copy_latex = result
-                    copy_markdown = f"${result}$"
-                    copy_plain = f"{variable} = {', '.join(str(s) for s in sols)}"
+                if not sols:
+                    result = "\\text{No solution}"
+                    numeric_result = "\\text{No numeric form}"
+                    copy_plain = copy_latex = copy_markdown = "No solution"
+                    copy_html = "<!-- No solution -->"
+                else:
+                    if len(sols) == 1:
+                        exact = sols[0]
+                        num = exact.evalf()
+                        result = f"{variable} = {latex(exact)}"
+                        numeric_result = f"{variable} \\approx {latex(num)}"
 
-        except Exception:
-            error = "Unable to solve equation."
+                        copy_latex = result
+                        copy_markdown = f"${result}$"
+                        copy_plain = f"{variable} = {exact}"
+                        copy_html = f'<span>{variable} = \\({latex(exact)}\\)</span>'
+                    else:
+                        exacts = ", ".join(latex(s) for s in sols)
+                        nums = ", ".join(latex(s.evalf()) for s in sols)
+
+                        result = f"{variable} = {exacts}"
+                        numeric_result = f"{variable} \\approx {nums}"
+
+                        copy_latex = result
+                        copy_markdown = f"${result}$"
+                        copy_plain = f"{variable} = {', '.join(str(s) for s in sols)}"
+                        copy_html = f'<span>{variable} = \\({exacts}\\)</span>'
+
+            except Exception:
+                error = "Unable to solve equation."
 
     return render_template_string(
         HTML_TEMPLATE,
@@ -349,6 +365,7 @@ def index():
         copy_latex=copy_latex,
         copy_markdown=copy_markdown,
         copy_plain=copy_plain,
+        copy_html=copy_html,
         error=error,
         equation=equation,
         variable=variable,
