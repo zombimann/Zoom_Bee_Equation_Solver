@@ -134,10 +134,10 @@ def solve_equation(equation_str: str, variable_str: str = 'x'):
     except Exception as e:
         return {'error': f'Solving failed: {str(e)}'}
 
-# ------------------- HTML + JS (Unchanged) -------------------
+# ------------------- HTML + JS -------------------
 HTML_TEMPLATE = r'''<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Equation Solver</title>
+<title>Equation Solver - Zoom Bee Apps</title>
 <style>
 :root{--p:#FF9800;--pd:#F57C00;--pl:#FFB74D;--bg:#FFF8F0;--c:#FFF;--t:#333;--tl:#666;--b:#E0E0E0;--ok:#4CAF50;--err:#F44336}
 *{margin:0;padding:0;box-sizing:border-box}body{font-family:system-ui,sans-serif;background:linear-gradient(135deg,var(--bg),#fff);color:var(--t);min-height:100vh;padding:20px}
@@ -162,13 +162,32 @@ button{background:linear-gradient(135deg,var(--p),var(--pd));color:#fff;border:n
 .toast.show{opacity:1}
 .error-message{background:#ffebee;color:var(--err);padding:15px;border-radius:8px;border-left:4px solid var(--err);margin:15px 0}
 #results{max-height:60vh;overflow-y:auto;padding-right:5px}
+.footer{text-align:center;margin-top:40px;padding:20px;color:var(--tl);font-size:.9em;border-top:1px solid var(--b)}
+.footer a{color:var(--pd);text-decoration:none;font-weight:600;transition:color .2s}
+.footer a:hover{color:var(--p);text-decoration:underline}
+.license-badge{display:inline-block;background:#f0f0f0;padding:4px 10px;border-radius:6px;margin:0 4px;font-size:.85em;color:var(--t)}
+.github-link{display:inline-flex;align-items:center;gap:6px;background:var(--pl);color:#8D4004;padding:8px 16px;border-radius:8px;text-decoration:none;font-weight:600;margin:10px 4px;transition:all .2s}
+.github-link:hover{background:var(--p);color:#fff;transform:translateY(-2px)}
+.about-section{background:linear-gradient(135deg,#fff8f0,#fff);padding:20px;border-radius:12px;margin:15px 0;border-left:4px solid var(--p)}
+.about-section h4{color:var(--pd);margin-bottom:8px}
+.about-section p{line-height:1.6;margin-bottom:8px}
 </style>
 <script>MathJax={tex:{inlineMath:[['$','$']]}};</script>
 <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
 </head>
 <body>
 <div class="container">
-<header><div class="logo"><span class="bee">Zoom Bee Apps</span></div><p>Free Equation Solver</p></header>
+<header>
+  <div class="logo"><span class="bee">🐝 Zoom Bee Apps</span></div>
+  <p style="font-size:1.2em;margin:5px 0">Free Equation Solver</p>
+  <div style="margin-top:10px">
+    <a href="https://github.com/zombimann/Zoom_Bee_Equation_Solver" target="_blank" class="github-link">
+      <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      View on GitHub
+    </a>
+  </div>
+</header>
+
 <div class="card">
   <input type="text" id="eq" placeholder="x^2+9x=8  or  sin(x)=0.5  or  2^t=16" autofocus>
   <div class="examples">
@@ -178,10 +197,49 @@ button{background:linear-gradient(135deg,var(--p),var(--pd));color:#fff;border:n
     <span class="example-tag" onclick="document.getElementById('eq').value='sin(x)=0.5'">sin(x)=0.5</span>
     <span class="example-tag" onclick="document.getElementById('eq').value='2^x=32'">2^x=32</span>
   </div>
-  <input type="text" id="var" value="x" maxlength="1" style="width:80px;text-align:center;margin-top:10px">
+  <input type="text" id="var" value="x" maxlength="1" style="width:80px;text-align:center;margin-top:10px" placeholder="Variable">
   <button id="btn">Solve <div class="spinner" id="spin"></div></button>
 </div>
+
 <div id="results"></div>
+
+<div class="about-section">
+  <h4>✨ Features</h4>
+  <p><strong>Smart Parsing:</strong> Handles implicit multiplication (2x, sin(x)) automatically</p>
+  <p><strong>Dual Output Modes:</strong> Toggle between exact symbolic and approximate decimal answers</p>
+  <p><strong>Export Ready:</strong> Copy solutions as LaTeX, Markdown, HTML, or Plain Text</p>
+  <p><strong>Custom Variables:</strong> Solve for x, y, t, or any single-letter variable</p>
+</div>
+
+<footer class="footer">
+  <div style="margin-bottom:15px">
+    <strong>Zoom Bee Apps - Equation Solver</strong><br>
+    Built with Flask & SymPy by <a href="https://github.com/zombimann" target="_blank">@zombimann</a>
+  </div>
+  
+  <div style="margin:15px 0">
+    <span class="license-badge">📜 License: AGPL v3</span>
+    <span class="license-badge">🐍 Python 3.8+</span>
+    <span class="license-badge">🌐 Flask 2.0+</span>
+  </div>
+  
+  <div style="margin-top:15px;font-size:.85em;max-width:600px;margin-left:auto;margin-right:auto">
+    <p>This software is free and open source under the <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank">GNU AGPL v3 License</a>. 
+    You are free to use, modify, and distribute this application. If you deploy a modified version publicly, 
+    you must make the source code available under the same license.</p>
+  </div>
+  
+  <div style="margin-top:15px">
+    <a href="https://github.com/zombimann/Zoom_Bee_Equation_Solver" target="_blank">📂 Source Code</a> • 
+    <a href="https://github.com/zombimann/Zoom_Bee_Equation_Solver/issues" target="_blank">🐛 Report Issues</a> • 
+    <a href="https://github.com/zombimann/?tab=repositories" target="_blank">👤 More Projects</a>
+  </div>
+  
+  <p style="margin-top:15px;color:#999;font-size:.8em">
+    Made with ❤️ for students and knowledge workers
+  </p>
+</footer>
+
 <div class="toast" id="toast">Copied!</div>
 </div>
 
